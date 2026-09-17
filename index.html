@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Hiragana Typing Trainer</title>
+<meta name="description" content="An offline, distraction-free typing trainer for the 46 basic hiragana characters." />
+<meta name="theme-color" content="#2c4257" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" type="image/png" href="./icon-192.png" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <h1>Hiragana Typing Trainer</h1>
+  </header>
+
+  <main class="practice">
+    <fieldset class="tab-group">
+      <legend class="visually-hidden">Display mode</legend>
+      <label class="tab">
+        <input type="radio" name="display-mode" value="kana" checked />
+        <span>Kana</span>
+      </label>
+      <label class="tab">
+        <input type="radio" name="display-mode" value="kana-romaji" />
+        <span>Both</span>
+      </label>
+      <label class="tab">
+        <input type="radio" name="display-mode" value="romaji" />
+        <span>Romaji</span>
+      </label>
+    </fieldset>
+
+    <div class="target-area" aria-live="polite">
+      <p class="empty-message" id="empty-message" hidden>
+        Select at least one row below to start practicing.
+      </p>
+      <div class="target-cell" id="target-cell">
+        <div class="target-primary" id="target-primary"></div>
+      </div>
+      <div class="target-secondary" id="target-secondary" hidden></div>
+    </div>
+
+    <form id="answer-form" autocomplete="off" novalidate>
+      <label for="answer-input" class="visually-hidden">Type the reading for the target above</label>
+      <input
+        type="text"
+        id="answer-input"
+        name="answer"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        enterkeyhint="done"
+        placeholder="Type here"
+      />
+      <button type="submit" class="visually-hidden" tabindex="-1">Submit answer</button>
+    </form>
+
+    <p class="feedback" id="feedback" role="status" aria-live="assertive"></p>
+
+    <fieldset class="tab-group tab-group--small">
+      <legend class="visually-hidden">Answer submission</legend>
+      <label class="tab">
+        <input type="radio" name="submission-mode" value="auto" checked />
+        <span>Auto-check</span>
+      </label>
+      <label class="tab">
+        <input type="radio" name="submission-mode" value="manual" />
+        <span>Manual (Enter)</span>
+      </label>
+    </fieldset>
+  </main>
+
+  <section class="row-panel" aria-labelledby="rows-heading">
+    <h2 id="rows-heading">Practice rows</h2>
+    <div class="row-list" id="row-list"></div>
+  </section>
+</div>
+
+<script src="./kana-data.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

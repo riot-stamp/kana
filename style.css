@@ -1,0 +1,348 @@
+/* =============================================================
+   Hiragana Typing Trainer — stylesheet
+
+   The design borrows from genkouyoushi (原稿用紙), the squared paper
+   used to practice writing kana by hand: one bordered cell holds the
+   character being practiced, everything else stays flat and quiet.
+   Colors are named after traditional dye/ink references — washi paper,
+   sumi ink, ai/kon indigo, shu vermilion — used sparingly, not as
+   decoration. No external fonts, images, or network requests.
+   ============================================================= */
+
+:root {
+  --paper: #ede7da;
+  --paper-line: #cfc5ae;
+  --ink: #262220;
+  --ink-soft: #63594b;
+  --indigo: #2c4257;
+  --vermilion: #a83f2a;
+  --focus-ring: rgba(44, 66, 87, 0.35);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1.25rem;
+  --space-5: 2rem;
+  --space-6: 3rem;
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-jp: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo,
+    "Noto Sans JP", "MS Gothic", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #201c18;
+    --paper-line: #423c33;
+    --ink: #ede7da;
+    --ink-soft: #a79e8c;
+    --indigo: #8fadc7;
+    --vermilion: #e08064;
+    --focus-ring: rgba(143, 173, 199, 0.35);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+p,
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.app {
+  max-width: 28rem;
+  margin: 0 auto;
+  min-height: 100%;
+  padding: var(--space-5) var(--space-4) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.app-header h1 {
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.practice {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-4);
+}
+
+/* ---------- Tabs (display mode / submission mode) ---------- */
+
+.tab-group {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 var(--space-2);
+  cursor: pointer;
+}
+
+.tab input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.tab span {
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+  border-bottom: 2px solid transparent;
+  padding-bottom: 3px;
+  line-height: 1.2;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.tab input:checked ~ span {
+  color: var(--ink);
+  border-bottom-color: var(--indigo);
+}
+
+.tab input:focus-visible ~ span {
+  outline: 2px solid var(--indigo);
+  outline-offset: 6px;
+  border-radius: 2px;
+}
+
+.tab-group--small {
+  gap: var(--space-3);
+}
+
+.tab-group--small .tab {
+  min-height: 2.25rem;
+}
+
+.tab-group--small .tab span {
+  font-size: 0.78rem;
+}
+
+/* ---------- Target area ---------- */
+
+.target-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: 14rem;
+  padding: var(--space-3) 0;
+  text-align: center;
+}
+
+.empty-message {
+  max-width: 18rem;
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.target-cell {
+  width: clamp(9rem, 45vw, 12.5rem);
+  height: clamp(9rem, 45vw, 12.5rem);
+  border: 2px solid var(--paper-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.target-primary {
+  font-family: var(--font-jp);
+  font-weight: 500;
+  font-size: clamp(4.25rem, 20vw, 7rem);
+  line-height: 1;
+  color: var(--ink);
+}
+
+.target-secondary {
+  font-family: var(--font-ui);
+  font-size: clamp(1.15rem, 5vw, 1.5rem);
+  color: var(--ink-soft);
+}
+
+/* ---------- Answer input ---------- */
+
+#answer-form {
+  display: block;
+}
+
+#answer-input {
+  display: block;
+  width: 100%;
+  font-family: var(--font-jp);
+  font-size: 1.4rem;
+  text-align: center;
+  padding: var(--space-2) var(--space-1) var(--space-3);
+  border: none;
+  border-bottom: 2px solid var(--ink-soft);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
+#answer-input::placeholder {
+  color: var(--ink-soft);
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  opacity: 0.8;
+}
+
+#answer-input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--indigo);
+}
+
+#answer-input:disabled {
+  opacity: 0.5;
+}
+
+/* ---------- Feedback ---------- */
+
+.feedback {
+  min-height: 1.4rem;
+  text-align: center;
+  font-weight: 600;
+  color: var(--vermilion);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.feedback.is-visible {
+  opacity: 1;
+}
+
+/* ---------- Row selection ---------- */
+
+.row-panel h2 {
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  margin-bottom: var(--space-3);
+}
+
+.row-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.kana-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: var(--space-3) var(--space-1);
+  border-bottom: 1px solid var(--paper-line);
+  cursor: pointer;
+}
+
+.kana-row:last-child {
+  border-bottom: none;
+}
+
+.kana-row-checkbox {
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  accent-color: var(--indigo);
+}
+
+.kana-row-checkbox:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 3px;
+}
+
+.kana-row-chars {
+  font-family: var(--font-jp);
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  transition: color 150ms ease, opacity 150ms ease;
+}
+
+.kana-row-checkbox:not(:checked) ~ .kana-row-chars {
+  color: var(--ink-soft);
+  opacity: 0.55;
+}
+
+/* ---------- Responsive tweaks ---------- */
+
+@media (max-width: 340px) {
+  .tab-group {
+    gap: var(--space-3);
+  }
+  .tab span {
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .app {
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+  .target-area {
+    min-height: 7rem;
+    padding: var(--space-2) 0;
+  }
+  .target-cell {
+    width: clamp(6rem, 22vh, 8rem);
+    height: clamp(6rem, 22vh, 8rem);
+  }
+  .target-primary {
+    font-size: clamp(3rem, 14vh, 5rem);
+  }
+}
+
+@media (min-width: 640px) {
+  .app {
+    padding-top: var(--space-6);
+  }
+}
