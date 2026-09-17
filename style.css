@@ -1,22 +1,22 @@
 /* =============================================================
-   Hiragana Typing Trainer — stylesheet
+   Kana Typing Trainer — stylesheet
 
-   The design borrows from genkouyoushi (原稿用紙), the squared paper
-   used to practice writing kana by hand: one bordered cell holds the
-   character being practiced, everything else stays flat and quiet.
-   Colors are named after traditional dye/ink references — washi paper,
-   sumi ink, ai/kon indigo, shu vermilion — used sparingly, not as
-   decoration. No external fonts, images, or network requests.
+   Palette: black text, white/light-gray surfaces, light blue as the
+   one accent (selection state, focus, and a faint fill behind the
+   practice cell). The layout still borrows from genkouyoushi (原稿用紙),
+   the squared paper used to hand-practice kana: one bordered cell
+   holds the character being practiced, everything else stays flat and
+   quiet. No external fonts, images, or network requests.
    ============================================================= */
 
 :root {
-  --paper: #ede7da;
-  --paper-line: #cfc5ae;
-  --ink: #262220;
-  --ink-soft: #63594b;
-  --indigo: #2c4257;
-  --vermilion: #a83f2a;
-  --focus-ring: rgba(44, 66, 87, 0.35);
+  --bg: #ffffff;
+  --line: #dfe3e8;
+  --ink: #14161a;
+  --ink-soft: #5b6270;
+  --accent: #2f7dd1;
+  --accent-soft: #eaf3fc;
+  --error: #c73a3a;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -32,13 +32,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #201c18;
-    --paper-line: #423c33;
-    --ink: #ede7da;
-    --ink-soft: #a79e8c;
-    --indigo: #8fadc7;
-    --vermilion: #e08064;
-    --focus-ring: rgba(143, 173, 199, 0.35);
+    --bg: #101215;
+    --line: #2b2f36;
+    --ink: #f2f3f5;
+    --ink-soft: #a3aab5;
+    --accent: #6fb1ec;
+    --accent-soft: #16232e;
+    --error: #ef6a6a;
   }
 }
 
@@ -55,7 +55,7 @@ body {
 
 body {
   margin: 0;
-  background: var(--paper);
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
@@ -68,6 +68,12 @@ fieldset {
   margin: 0;
   padding: 0;
   border: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
 }
 
 .visually-hidden {
@@ -143,11 +149,11 @@ fieldset {
 
 .tab input:checked ~ span {
   color: var(--ink);
-  border-bottom-color: var(--indigo);
+  border-bottom-color: var(--accent);
 }
 
 .tab input:focus-visible ~ span {
-  outline: 2px solid var(--indigo);
+  outline: 2px solid var(--accent);
   outline-offset: 6px;
   border-radius: 2px;
 }
@@ -187,7 +193,8 @@ fieldset {
 .target-cell {
   width: clamp(9rem, 45vw, 12.5rem);
   height: clamp(9rem, 45vw, 12.5rem);
-  border: 2px solid var(--paper-line);
+  border: 2px solid var(--line);
+  background: var(--accent-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -236,7 +243,7 @@ fieldset {
 
 #answer-input:focus-visible {
   outline: none;
-  border-bottom-color: var(--indigo);
+  border-bottom-color: var(--accent);
 }
 
 #answer-input:disabled {
@@ -249,7 +256,7 @@ fieldset {
   min-height: 1.4rem;
   text-align: center;
   font-weight: 600;
-  color: var(--vermilion);
+  color: var(--error);
   opacity: 0;
   transition: opacity 150ms ease;
 }
@@ -268,6 +275,52 @@ fieldset {
   margin-bottom: var(--space-3);
 }
 
+.row-section {
+  border-bottom: 1px solid var(--line);
+  padding: var(--space-2) 0;
+}
+
+.row-section summary {
+  cursor: pointer;
+  list-style: revert;
+  padding: var(--space-2) var(--space-1);
+  min-height: 2.5rem;
+  display: list-item;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.row-section summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.row-section-actions {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-1) var(--space-1) var(--space-3);
+}
+
+.text-button {
+  border: none;
+  padding: var(--space-1) 0;
+  font-size: 0.82rem;
+  color: var(--accent);
+  cursor: pointer;
+  min-height: 2rem;
+}
+
+.text-button:hover {
+  text-decoration: underline;
+}
+
+.text-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
 .row-list {
   display: flex;
   flex-direction: column;
@@ -278,8 +331,8 @@ fieldset {
   align-items: center;
   gap: var(--space-3);
   min-height: 2.75rem;
-  padding: var(--space-3) var(--space-1);
-  border-bottom: 1px solid var(--paper-line);
+  padding: var(--space-2) var(--space-1);
+  border-bottom: 1px solid var(--line);
   cursor: pointer;
 }
 
@@ -291,25 +344,25 @@ fieldset {
   flex-shrink: 0;
   width: 1.4rem;
   height: 1.4rem;
-  accent-color: var(--indigo);
+  accent-color: var(--accent);
 }
 
 .kana-row-checkbox:focus-visible {
-  outline: 2px solid var(--indigo);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
 
 .kana-row-chars {
   font-family: var(--font-jp);
-  font-size: 1.15rem;
-  letter-spacing: 0.12em;
+  font-size: 1.1rem;
+  letter-spacing: 0.1em;
   color: var(--ink);
   transition: color 150ms ease, opacity 150ms ease;
 }
 
 .kana-row-checkbox:not(:checked) ~ .kana-row-chars {
   color: var(--ink-soft);
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 /* ---------- Responsive tweaks ---------- */

@@ -1,10 +1,11 @@
 /**
- * Hiragana Typing Trainer — application logic.
+ * Hiragana & Katakana Typing Trainer — application logic.
  *
  * No kana-specific data lives here; everything about individual
- * characters comes from KANA_ROWS (kana-data.js). This file only knows
- * about rows, entries, and their { kana, romaji } shape, so it should
- * not need to change when that data grows later.
+ * characters and how rows are grouped comes from KANA_SECTIONS
+ * (kana-data.js). This file only knows about sections, rows, and their
+ * { kana, romaji } shape, so it shouldn't need to change as that data
+ * grows further.
  */
 
 (function () {
@@ -21,6 +22,15 @@
   const dom = {};
   let wrongTimeoutId = null;
 
+  // Re-focusing the answer input after a tap elsewhere (a row checkbox,
+  // a "select all" button, ...) is a convenience so people can keep
+  // typing without hunting for the field again. `preventScroll` matters
+  // on mobile: without it, focusing an input above the fold snaps the
+  // page back to the top the moment you tap a checkbox further down.
+  function refocusInput() {
+    dom.input.focus({ preventScroll: true });
+  }
+
   function init() {
     dom.targetCell = document.getElementById('target-cell');
     dom.primary = document.getElementById('target-primary');
@@ -29,13 +39,15 @@
     dom.input = document.getElementById('answer-input');
     dom.form = document.getElementById('answer-form');
     dom.feedback = document.getElementById('feedback');
-    dom.rowList = document.getElementById('row-list');
+    dom.rowSections = document.getElementById('row-sections');
 
-    KANA_ROWS.forEach((row) => {
-      state.enabledRows[row.id] = true;
+    KANA_SECTIONS.forEach((section) => {
+      section.rows.forEach((row) => {
+        state.enabledRows[row.id] = !!section.defaultEnabled;
+      });
     });
 
-    buildRowControls();
+    buildRowSections();
     bindEvents();
     advanceToNextKana();
     dom.input.focus();
@@ -43,8 +55,14 @@
 
   // ---- Selection pool -----------------------------------------------
 
+  function getAllRows() {
+    return KANA_SECTIONS.flatMap((section) => section.rows);
+  }
+
   function getActivePool() {
-    return KANA_ROWS.filter((row) => state.enabledRows[row.id]).flatMap((row) => row.kana);
+    return getAllRows()
+      .filter((row) => state.enabledRows[row.id])
+      .flatMap((row) => row.kana);
   }
 
   function getWeight(kana) {
@@ -121,7 +139,7 @@
     }
   }
 
-  // ---- Matching --------------------------------------------------------
+  // ---- Matching ----------------------------------------------------
 
   function isExactMatch(entry, raw) {
     const trimmed = raw.trim();
@@ -143,7 +161,7 @@
     return entry.romaji.some((r) => r.toLowerCase().startsWith(lower));
   }
 
-  // ---- Feedback ----------------------------------------------------
+  // ---- Feedback ------------------------------------------------------
 
   function showWrongFeedback() {
     dom.feedback.textContent = 'Wrong!';
@@ -166,43 +184,105 @@
     dom.input.value = '';
   }
 
-  // ---- Row controls ------------------------------------------------
+  // ---- Row selection (grouped into collapsible sections) -------------
 
-  function buildRowControls() {
-    dom.rowList.innerHTML = '';
-    KANA_ROWS.forEach((row) => {
-      const label = document.createElement('label');
-      label.className = 'kana-row';
+  function onRowSelectionChanged() {
+    const pool = getActivePool();
+    if (pool.length === 0) {
+      state.current = null;
+      renderEmptyState();
+    } else if (!state.current || !pool.includes(state.current)) {
+      dom.emptyMessage.hidden = true;
+      dom.targetCell.hidden = false;
+      dom.input.disabled = false;
+      state.current = pickNextKana(pool, state.current);
+      renderTarget();
+    }
+  }
 
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.checked = true;
-      checkbox.className = 'kana-row-checkbox';
-      checkbox.setAttribute('aria-label', `Row: ${row.kana.map((k) => k.kana).join(', ')}`);
+  function buildRowCheckbox(row) {
+    const label = document.createElement('label');
+    label.className = 'kana-row';
 
-      const chars = document.createElement('span');
-      chars.className = 'kana-row-chars';
-      chars.lang = 'ja';
-      chars.textContent = row.kana.map((k) => k.kana).join('  ');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !!state.enabledRows[row.id];
+    checkbox.className = 'kana-row-checkbox';
+    checkbox.dataset.rowId = row.id;
+    checkbox.setAttribute('aria-label', `Row: ${row.kana.map((k) => k.kana).join(', ')}`);
 
-      label.append(checkbox, chars);
-      dom.rowList.appendChild(label);
+    const chars = document.createElement('span');
+    chars.className = 'kana-row-chars';
+    chars.lang = 'ja';
+    chars.textContent = row.kana.map((k) => k.kana).join('  ');
 
-      checkbox.addEventListener('change', () => {
-        state.enabledRows[row.id] = checkbox.checked;
-        const pool = getActivePool();
-        if (pool.length === 0) {
-          state.current = null;
-          renderEmptyState();
-        } else if (!state.current || !pool.includes(state.current)) {
-          dom.emptyMessage.hidden = true;
-          dom.targetCell.hidden = false;
-          dom.input.disabled = false;
-          state.current = pickNextKana(pool, state.current);
-          renderTarget();
-        }
-        dom.input.focus();
+    label.append(checkbox, chars);
+
+    checkbox.addEventListener('change', () => {
+      state.enabledRows[row.id] = checkbox.checked;
+      onRowSelectionChanged();
+      refocusInput();
+    });
+
+    return { label, checkbox };
+  }
+
+  function buildRowSections() {
+    dom.rowSections.innerHTML = '';
+
+    KANA_SECTIONS.forEach((section) => {
+      const details = document.createElement('details');
+      details.className = 'row-section';
+      if (section.defaultEnabled) details.open = true;
+
+      const summary = document.createElement('summary');
+      summary.textContent = section.label;
+      details.appendChild(summary);
+
+      const actions = document.createElement('div');
+      actions.className = 'row-section-actions';
+
+      const checkboxesInSection = [];
+
+      const selectAllBtn = document.createElement('button');
+      selectAllBtn.type = 'button';
+      selectAllBtn.className = 'text-button';
+      selectAllBtn.textContent = 'Select all';
+      selectAllBtn.addEventListener('click', () => {
+        checkboxesInSection.forEach((checkbox) => {
+          checkbox.checked = true;
+          state.enabledRows[checkbox.dataset.rowId] = true;
+        });
+        onRowSelectionChanged();
+        refocusInput();
       });
+
+      const clearBtn = document.createElement('button');
+      clearBtn.type = 'button';
+      clearBtn.className = 'text-button';
+      clearBtn.textContent = 'Clear';
+      clearBtn.addEventListener('click', () => {
+        checkboxesInSection.forEach((checkbox) => {
+          checkbox.checked = false;
+          state.enabledRows[checkbox.dataset.rowId] = false;
+        });
+        onRowSelectionChanged();
+        refocusInput();
+      });
+
+      actions.append(selectAllBtn, clearBtn);
+      details.appendChild(actions);
+
+      const rowList = document.createElement('div');
+      rowList.className = 'row-list';
+      section.rows.forEach((row) => {
+        const { label, checkbox } = buildRowCheckbox(row);
+        checkboxesInSection.push(checkbox);
+        rowList.appendChild(label);
+      });
+      details.appendChild(rowList);
+
+      dom.rowSections.appendChild(details);
     });
   }
 
@@ -236,7 +316,7 @@
         if (event.target.checked) {
           state.displayMode = event.target.value;
           renderTarget();
-          dom.input.focus();
+          refocusInput();
         }
       });
     });
@@ -245,7 +325,7 @@
       radio.addEventListener('change', (event) => {
         if (event.target.checked) {
           state.submissionMode = event.target.value;
-          dom.input.focus();
+          refocusInput();
         }
       });
     });
