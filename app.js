@@ -1,11 +1,17 @@
 /**
- * Hiragana & Katakana Typing Trainer — application logic.
+ * Kana Typing Trainer — application logic.
  *
  * No kana-specific data lives here; everything about individual
  * characters and how rows are grouped comes from KANA_SECTIONS
  * (kana-data.js). This file only knows about sections, rows, and their
  * { kana, romaji } shape, so it shouldn't need to change as that data
  * grows further.
+ *
+ * All visual "Game Juice" effects live in juice.js (GameJuice). This
+ * file only ever calls into it at the moment something happens
+ * (correct answer, wrong answer, a keystroke); it never waits for it.
+ * State updates and input handling below are synchronous regardless of
+ * whether Game Juice is on, off, or mid-transition.
  */
 
 (function () {
@@ -21,18 +27,66 @@
 
   const dom = {};
   let wrongTimeoutId = null;
+  let idleTimeoutId = null;
+
+  // Metadata (script + structural kind) per kana character, derived once
+  // from which section/row it came from. Game Juice uses this to give
+  // dakuten/handakuten/small/combination kana — and hiragana vs.
+  // katakana — a distinct but restrained motion flavor. Matching and
+  // weighting never consult this; it is purely presentational.
+  const kanaMeta = new Map();
+
+  function classifyRow(section, row) {
+    const script = section.id.startsWith('katakana') ? 'katakana' : 'hiragana';
+    let kind = 'basic';
+    if (section.id.includes('combo')) kind = 'combo';
+    else if (section.id.includes('small')) kind = 'small';
+    else if (section.id.includes('dakuten')) {
+      kind = row.id === 'pa' || row.id === 'k-pa' ? 'handakuten' : 'dakuten';
+    }
+    return { script, kind };
+  }
+
+  // Purely in-memory, never displayed, never persisted, reset whenever
+  // the active pool changes. Not a scoring system — it only powers one
+  // occasional, slightly stronger animation when every currently-enabled
+  // kana has been answered correctly at least once in the current pass.
+  let sessionSeen = new Set();
+
+  function resetSessionProgress() {
+    sessionSeen = new Set();
+  }
+
+  function trackSessionProgress(entry, pool) {
+    sessionSeen.add(entry.kana);
+    if (pool.length >= 5 && pool.every((k) => sessionSeen.has(k.kana))) {
+      sessionSeen = new Set();
+      return true;
+    }
+    return false;
+  }
 
   // Re-focusing the answer input after a tap elsewhere (a row checkbox,
-  // a "select all" button, ...) is a convenience so people can keep
-  // typing without hunting for the field again. `preventScroll` matters
-  // on mobile: without it, focusing an input above the fold snaps the
-  // page back to the top the moment you tap a checkbox further down.
+  // a "select all" button, a settings tab, ...) is a convenience so
+  // people can keep typing without hunting for the field again.
+  // `preventScroll` matters on mobile: without it, focusing an input
+  // above the fold snaps the page back to the top the moment you tap a
+  // checkbox further down.
   function refocusInput() {
     dom.input.focus({ preventScroll: true });
   }
 
+  function scheduleIdleCheck() {
+    window.clearTimeout(idleTimeoutId);
+    GameJuice.setIdle(dom.primary, false);
+    idleTimeoutId = window.setTimeout(() => {
+      if (dom.input.value === '') GameJuice.setIdle(dom.primary, true);
+    }, 1200);
+  }
+
   function init() {
     dom.targetCell = document.getElementById('target-cell');
+    dom.juiceLayer = document.getElementById('juice-layer');
     dom.primary = document.getElementById('target-primary');
     dom.secondary = document.getElementById('target-secondary');
     dom.emptyMessage = document.getElementById('empty-message');
@@ -44,13 +98,35 @@
     KANA_SECTIONS.forEach((section) => {
       section.rows.forEach((row) => {
         state.enabledRows[row.id] = !!section.defaultEnabled;
+        const meta = classifyRow(section, row);
+        row.kana.forEach((entry) => kanaMeta.set(entry.kana, meta));
       });
     });
 
     buildRowSections();
+    buildGameJuiceToggle();
     bindEvents();
+    GameJuice.onChange((animating) => {
+      if (!animating) clearActiveJuiceEffects();
+    });
     advanceToNextKana();
     dom.input.focus();
+    scheduleIdleCheck();
+  }
+
+  // Belt-and-suspenders for "immediately enable/disable": called the
+  // moment Game Juice is turned off, or the OS switches on reduced
+  // motion, so an effect that happened to be mid-flight at that exact
+  // instant doesn't keep playing to completion.
+  function clearActiveJuiceEffects() {
+    dom.primary.classList.remove(
+      'juice-pop', 'juice-pop--small', 'juice-exit', 'juice-enter', 'juice-combo',
+      'script-hiragana', 'script-katakana', 'juice-idle'
+    );
+    if (dom.secondary) dom.secondary.classList.remove('juice-exit', 'juice-enter');
+    if (dom.targetCell) dom.targetCell.classList.remove('juice-wrong', 'juice-sweep');
+    if (dom.input) dom.input.classList.remove('juice-key-tick', 'juice-input-resolve');
+    if (dom.juiceLayer) dom.juiceLayer.innerHTML = '';
   }
 
   // ---- Selection pool -----------------------------------------------
@@ -94,19 +170,33 @@
     return candidates[candidates.length - 1];
   }
 
-  function advanceToNextKana() {
+  // Chooses the next kana into state.current (or null if nothing is
+  // enabled). Pure selection — no painting — so callers can decide
+  // separately, and immediately, when/how to render it.
+  function pickNext() {
     const pool = getActivePool();
     if (pool.length === 0) {
       state.current = null;
+      return null;
+    }
+    const previous = state.current;
+    state.current = pickNextKana(pool, previous);
+    return pool;
+  }
+
+  function paintCurrent(pool) {
+    if (!pool) {
       renderEmptyState();
       return;
     }
     dom.emptyMessage.hidden = true;
     dom.targetCell.hidden = false;
     dom.input.disabled = false;
-    const previous = state.current;
-    state.current = pickNextKana(pool, previous);
     renderTarget();
+  }
+
+  function advanceToNextKana() {
+    paintCurrent(pickNext());
   }
 
   function renderEmptyState() {
@@ -122,21 +212,43 @@
     const mode = state.displayMode;
 
     if (mode === 'kana') {
-      dom.primary.textContent = state.current.kana;
-      dom.primary.lang = 'ja';
+      setPrimaryKana(state.current.kana);
       dom.secondary.hidden = true;
       dom.secondary.textContent = '';
     } else if (mode === 'kana-romaji') {
-      dom.primary.textContent = state.current.kana;
-      dom.primary.lang = 'ja';
+      setPrimaryKana(state.current.kana);
       dom.secondary.hidden = false;
       dom.secondary.textContent = state.current.romaji[0];
     } else {
-      dom.primary.textContent = state.current.romaji[0];
-      dom.primary.lang = '';
+      setPrimaryRomaji(state.current.romaji[0]);
       dom.secondary.hidden = true;
       dom.secondary.textContent = '';
     }
+  }
+
+  // Combination kana (2 characters: a base kana + small ya/yu/yo) render
+  // as two spans so Game Juice can animate them "assembling" into the
+  // full glyph. Every other kana renders as plain text, exactly as
+  // before — this only branches for the combination case.
+  function setPrimaryKana(kana) {
+    dom.primary.lang = 'ja';
+    if (kana.length === 2) {
+      dom.primary.textContent = '';
+      const main = document.createElement('span');
+      main.className = 'kana-part kana-part--main';
+      main.textContent = kana[0];
+      const small = document.createElement('span');
+      small.className = 'kana-part kana-part--small';
+      small.textContent = kana[1];
+      dom.primary.append(main, small);
+    } else {
+      dom.primary.textContent = kana;
+    }
+  }
+
+  function setPrimaryRomaji(romaji) {
+    dom.primary.lang = '';
+    dom.primary.textContent = romaji;
   }
 
   // ---- Matching ----------------------------------------------------
@@ -173,30 +285,49 @@
   }
 
   function handleCorrect() {
-    decayWeightCorrect(state.current);
+    const finished = state.current;
+    const meta = kanaMeta.get(finished.kana) || { script: 'hiragana', kind: 'basic' };
+    const poolBefore = getActivePool();
+    const sweep = trackSessionProgress(finished, poolBefore);
+
+    decayWeightCorrect(finished);
     dom.input.value = '';
-    advanceToNextKana();
+    GameJuice.playInputResolve(dom.input);
+    scheduleIdleCheck();
+
+    const pool = pickNext();
+
+    GameJuice.playCorrectTransition({
+      primaryEl: dom.primary,
+      secondaryEl: dom.secondary,
+      layer: dom.juiceLayer,
+      script: meta.script,
+      kind: meta.kind,
+      sweep,
+      onSwap: () => paintCurrent(pool),
+    });
   }
 
   function handleIncorrect() {
     bumpWeightIncorrect(state.current);
     showWrongFeedback();
+    GameJuice.playWrongFeedback(dom.targetCell);
     dom.input.value = '';
+    scheduleIdleCheck();
   }
 
   // ---- Row selection (grouped into collapsible sections) -------------
 
   function onRowSelectionChanged() {
+    resetSessionProgress();
+    GameJuice.invalidatePendingTransition();
     const pool = getActivePool();
     if (pool.length === 0) {
       state.current = null;
-      renderEmptyState();
+      paintCurrent(null);
     } else if (!state.current || !pool.includes(state.current)) {
-      dom.emptyMessage.hidden = true;
-      dom.targetCell.hidden = false;
-      dom.input.disabled = false;
       state.current = pickNextKana(pool, state.current);
-      renderTarget();
+      paintCurrent(pool);
     }
   }
 
@@ -286,10 +417,28 @@
     });
   }
 
+  // ---- Game Juice toggle ------------------------------------------
+
+  function buildGameJuiceToggle() {
+    const radios = document.querySelectorAll('input[name="game-juice"]');
+    const current = GameJuice.isEnabled() ? 'on' : 'off';
+    radios.forEach((radio) => {
+      radio.checked = radio.value === current;
+      radio.addEventListener('change', () => {
+        if (radio.checked) {
+          GameJuice.setEnabled(radio.value === 'on');
+          refocusInput();
+        }
+      });
+    });
+  }
+
   // ---- Event wiring --------------------------------------------------
 
   function bindEvents() {
     dom.input.addEventListener('input', () => {
+      GameJuice.playInputTick(dom.input);
+      scheduleIdleCheck();
       if (state.submissionMode !== 'auto' || !state.current) return;
       const val = dom.input.value;
       if (isExactMatch(state.current, val)) {
