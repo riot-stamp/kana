@@ -3,15 +3,11 @@
  *
  * No kana-specific data lives here; everything about individual
  * characters and how rows are grouped comes from KANA_SECTIONS
- * (kana-data.js). This file only knows about sections, rows, and their
- * { kana, romaji } shape, so it shouldn't need to change as that data
- * grows further.
+ * (kana-data.js).
  *
- * All visual "Game Juice" effects live in juice.js (GameJuice). This
- * file only ever calls into it at the moment something happens
- * (correct answer, wrong answer, a keystroke); it never waits for it.
- * State updates and input handling below are synchronous regardless of
- * whether Game Juice is on, off, or mid-transition.
+ * Visual feedback ("juice": a pop, a ripple, a shake, a soft transition
+ * between kana) is always on and lives inline below — it's motion only,
+ * never affects correctness, and always respects prefers-reduced-motion.
  */
 
 (function () {
@@ -29,59 +25,11 @@
   let wrongTimeoutId = null;
   let idleTimeoutId = null;
 
-  // Metadata (script + structural kind) per kana character, derived once
-  // from which section/row it came from. Game Juice uses this to give
-  // dakuten/handakuten/small/combination kana — and hiragana vs.
-  // katakana — a distinct but restrained motion flavor. Matching and
-  // weighting never consult this; it is purely presentational.
-  const kanaMeta = new Map();
-
-  function classifyRow(section, row) {
-    const script = section.id.startsWith('katakana') ? 'katakana' : 'hiragana';
-    let kind = 'basic';
-    if (section.id.includes('combo')) kind = 'combo';
-    else if (section.id.includes('small')) kind = 'small';
-    else if (section.id.includes('dakuten')) {
-      kind = row.id === 'pa' || row.id === 'k-pa' ? 'handakuten' : 'dakuten';
-    }
-    return { script, kind };
-  }
-
-  // Purely in-memory, never displayed, never persisted, reset whenever
-  // the active pool changes. Not a scoring system — it only powers one
-  // occasional, slightly stronger animation when every currently-enabled
-  // kana has been answered correctly at least once in the current pass.
-  let sessionSeen = new Set();
-
-  function resetSessionProgress() {
-    sessionSeen = new Set();
-  }
-
-  function trackSessionProgress(entry, pool) {
-    sessionSeen.add(entry.kana);
-    if (pool.length >= 5 && pool.every((k) => sessionSeen.has(k.kana))) {
-      sessionSeen = new Set();
-      return true;
-    }
-    return false;
-  }
-
-  // Re-focusing the answer input after a tap elsewhere (a row checkbox,
-  // a "select all" button, a settings tab, ...) is a convenience so
-  // people can keep typing without hunting for the field again.
-  // `preventScroll` matters on mobile: without it, focusing an input
-  // above the fold snaps the page back to the top the moment you tap a
-  // checkbox further down.
   function refocusInput() {
+    // preventScroll matters on mobile: without it, focusing an input
+    // above the fold snaps the page back to the top the moment you tap
+    // a checkbox further down.
     dom.input.focus({ preventScroll: true });
-  }
-
-  function scheduleIdleCheck() {
-    window.clearTimeout(idleTimeoutId);
-    GameJuice.setIdle(dom.primary, false);
-    idleTimeoutId = window.setTimeout(() => {
-      if (dom.input.value === '') GameJuice.setIdle(dom.primary, true);
-    }, 1200);
   }
 
   function init() {
@@ -98,45 +46,20 @@
     KANA_SECTIONS.forEach((section) => {
       section.rows.forEach((row) => {
         state.enabledRows[row.id] = !!section.defaultEnabled;
-        const meta = classifyRow(section, row);
-        row.kana.forEach((entry) => kanaMeta.set(entry.kana, meta));
       });
     });
 
     buildRowSections();
-    buildGameJuiceToggle();
     bindEvents();
-    GameJuice.onChange((animating) => {
-      if (!animating) clearActiveJuiceEffects();
-    });
     advanceToNextKana();
     dom.input.focus();
-    scheduleIdleCheck();
-  }
-
-  // Belt-and-suspenders for "immediately enable/disable": called the
-  // moment Game Juice is turned off, or the OS switches on reduced
-  // motion, so an effect that happened to be mid-flight at that exact
-  // instant doesn't keep playing to completion.
-  function clearActiveJuiceEffects() {
-    dom.primary.classList.remove(
-      'juice-pop', 'juice-pop--small', 'juice-exit', 'juice-enter', 'juice-combo',
-      'script-hiragana', 'script-katakana', 'juice-idle'
-    );
-    if (dom.secondary) dom.secondary.classList.remove('juice-exit', 'juice-enter');
-    if (dom.targetCell) dom.targetCell.classList.remove('juice-wrong', 'juice-sweep');
-    if (dom.input) dom.input.classList.remove('juice-key-tick', 'juice-input-resolve');
-    if (dom.juiceLayer) dom.juiceLayer.innerHTML = '';
+    scheduleIdle();
   }
 
   // ---- Selection pool -----------------------------------------------
 
-  function getAllRows() {
-    return KANA_SECTIONS.flatMap((section) => section.rows);
-  }
-
   function getActivePool() {
-    return getAllRows()
+    return KANA_SECTIONS.flatMap((section) => section.rows)
       .filter((row) => state.enabledRows[row.id])
       .flatMap((row) => row.kana);
   }
@@ -155,38 +78,32 @@
     state.weights[entry.kana] = Math.max(1, getWeight(entry.kana) - 1);
   }
 
-  function pickNextKana(pool, previous) {
-    let candidates = pool;
-    if (pool.length > 1 && previous) {
-      const withoutPrevious = pool.filter((k) => k.kana !== previous.kana);
-      if (withoutPrevious.length > 0) candidates = withoutPrevious;
-    }
-    const total = candidates.reduce((sum, k) => sum + getWeight(k.kana), 0);
-    let roll = Math.random() * total;
-    for (const candidate of candidates) {
-      roll -= getWeight(candidate.kana);
-      if (roll <= 0) return candidate;
-    }
-    return candidates[candidates.length - 1];
-  }
-
-  // Chooses the next kana into state.current (or null if nothing is
-  // enabled). Pure selection — no painting — so callers can decide
-  // separately, and immediately, when/how to render it.
   function pickNext() {
     const pool = getActivePool();
     if (pool.length === 0) {
       state.current = null;
-      return null;
+      return;
     }
-    const previous = state.current;
-    state.current = pickNextKana(pool, previous);
-    return pool;
+    let candidates = pool;
+    if (pool.length > 1 && state.current) {
+      const withoutPrevious = pool.filter((k) => k.kana !== state.current.kana);
+      if (withoutPrevious.length > 0) candidates = withoutPrevious;
+    }
+    const total = candidates.reduce((sum, k) => sum + getWeight(k.kana), 0);
+    let roll = Math.random() * total;
+    state.current = candidates.find((k) => (roll -= getWeight(k.kana)) <= 0) || candidates[candidates.length - 1];
   }
 
-  function paintCurrent(pool) {
-    if (!pool) {
-      renderEmptyState();
+  // Always reflects the live state.current, never a stale captured
+  // value — safe to call from a deferred callback (e.g. after a juice
+  // transition) even if the row selection changed in the meantime.
+  function paintCurrent() {
+    if (!state.current) {
+      dom.emptyMessage.hidden = false;
+      dom.targetCell.hidden = true;
+      dom.secondary.hidden = true;
+      dom.input.value = '';
+      dom.input.disabled = true;
       return;
     }
     dom.emptyMessage.hidden = true;
@@ -196,43 +113,21 @@
   }
 
   function advanceToNextKana() {
-    paintCurrent(pickNext());
-  }
-
-  function renderEmptyState() {
-    dom.emptyMessage.hidden = false;
-    dom.targetCell.hidden = true;
-    dom.secondary.hidden = true;
-    dom.input.value = '';
-    dom.input.disabled = true;
+    pickNext();
+    paintCurrent();
   }
 
   function renderTarget() {
-    if (!state.current) return;
     const mode = state.displayMode;
+    const kana = state.current.kana;
 
-    if (mode === 'kana') {
-      setPrimaryKana(state.current.kana);
-      dom.secondary.hidden = true;
-      dom.secondary.textContent = '';
-    } else if (mode === 'kana-romaji') {
-      setPrimaryKana(state.current.kana);
-      dom.secondary.hidden = false;
-      dom.secondary.textContent = state.current.romaji[0];
-    } else {
-      setPrimaryRomaji(state.current.romaji[0]);
-      dom.secondary.hidden = true;
-      dom.secondary.textContent = '';
-    }
-  }
-
-  // Combination kana (2 characters: a base kana + small ya/yu/yo) render
-  // as two spans so Game Juice can animate them "assembling" into the
-  // full glyph. Every other kana renders as plain text, exactly as
-  // before — this only branches for the combination case.
-  function setPrimaryKana(kana) {
-    dom.primary.lang = 'ja';
-    if (kana.length === 2) {
+    if (mode === 'romaji') {
+      dom.primary.lang = '';
+      dom.primary.textContent = state.current.romaji[0];
+    } else if (kana.length === 2) {
+      // Combination kana (base + small ya/yu/yo): two spans so the
+      // "assembly" animation can animate them separately.
+      dom.primary.lang = 'ja';
       dom.primary.textContent = '';
       const main = document.createElement('span');
       main.className = 'kana-part kana-part--main';
@@ -242,13 +137,13 @@
       small.textContent = kana[1];
       dom.primary.append(main, small);
     } else {
+      dom.primary.lang = 'ja';
       dom.primary.textContent = kana;
     }
-  }
 
-  function setPrimaryRomaji(romaji) {
-    dom.primary.lang = '';
-    dom.primary.textContent = romaji;
+    const showRomaji = mode === 'kana-romaji';
+    dom.secondary.hidden = !showRomaji;
+    dom.secondary.textContent = showRomaji ? state.current.romaji[0] : '';
   }
 
   // ---- Matching ----------------------------------------------------
@@ -273,6 +168,76 @@
     return entry.romaji.some((r) => r.toLowerCase().startsWith(lower));
   }
 
+  // ---- Visual feedback (motion only; never affects correctness) ------
+  //
+  // Always on. The only thing that can suppress it is the OS-level
+  // prefers-reduced-motion setting, checked fresh every time — a
+  // MediaQueryList's `.matches` is always live, so no change-listener
+  // is needed just to read it.
+
+  const reduceMotionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const motionOK = () => !(reduceMotionQuery && reduceMotionQuery.matches);
+  const isKatakana = (kana) => /[\u30a0-\u30ff]/.test(kana);
+
+  // Adds a class, removes it once its animation finishes, and forces a
+  // reflow first so the same effect can retrigger back-to-back.
+  function pulse(el, className) {
+    if (!motionOK() || !el) return;
+    el.classList.remove(className);
+    void el.offsetWidth;
+    el.classList.add(className);
+    el.addEventListener('animationend', () => el.classList.remove(className), { once: true });
+  }
+
+  function ripple() {
+    if (!motionOK() || !dom.juiceLayer) return;
+    const el = document.createElement('span');
+    el.className = 'juice-ripple';
+    dom.juiceLayer.appendChild(el);
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  }
+
+  // Leave the just-answered kana -> paint the next one -> let it enter.
+  // `onSwap` always runs; only *when* it runs depends on motion being
+  // on. Input handling never waits on this.
+  function playCorrect(finished, onSwap) {
+    if (!motionOK()) {
+      onSwap();
+      return;
+    }
+    dom.primary.classList.remove('juice-leave', 'juice-sharp');
+    void dom.primary.offsetWidth;
+    dom.primary.classList.add('juice-leave');
+    if (isKatakana(finished.kana)) dom.primary.classList.add('juice-sharp');
+    ripple();
+    // ponytail: relies on animationend rather than a setTimeout
+    // fallback; if a browser ever fails to fire it, add one then.
+    dom.primary.addEventListener(
+      'animationend',
+      () => {
+        dom.primary.classList.remove('juice-leave', 'juice-sharp');
+        onSwap();
+        const combo = state.current && state.current.kana.length === 2;
+        dom.primary.classList.add('juice-enter');
+        if (combo) dom.primary.classList.add('juice-combo');
+        dom.primary.addEventListener(
+          'animationend',
+          () => dom.primary.classList.remove('juice-enter', 'juice-combo'),
+          { once: true }
+        );
+      },
+      { once: true }
+    );
+  }
+
+  function scheduleIdle() {
+    window.clearTimeout(idleTimeoutId);
+    dom.primary.classList.remove('juice-idle');
+    idleTimeoutId = window.setTimeout(() => {
+      if (dom.input.value === '' && motionOK()) dom.primary.classList.add('juice-idle');
+    }, 1200);
+  }
+
   // ---- Feedback ------------------------------------------------------
 
   function showWrongFeedback() {
@@ -286,49 +251,28 @@
 
   function handleCorrect() {
     const finished = state.current;
-    const meta = kanaMeta.get(finished.kana) || { script: 'hiragana', kind: 'basic' };
-    const poolBefore = getActivePool();
-    const sweep = trackSessionProgress(finished, poolBefore);
-
     decayWeightCorrect(finished);
     dom.input.value = '';
-    GameJuice.playInputResolve(dom.input);
-    scheduleIdleCheck();
-
-    const pool = pickNext();
-
-    GameJuice.playCorrectTransition({
-      primaryEl: dom.primary,
-      secondaryEl: dom.secondary,
-      layer: dom.juiceLayer,
-      script: meta.script,
-      kind: meta.kind,
-      sweep,
-      onSwap: () => paintCurrent(pool),
-    });
+    pulse(dom.input, 'juice-resolve');
+    scheduleIdle();
+    pickNext();
+    playCorrect(finished, paintCurrent);
   }
 
   function handleIncorrect() {
     bumpWeightIncorrect(state.current);
     showWrongFeedback();
-    GameJuice.playWrongFeedback(dom.targetCell);
+    pulse(dom.targetCell, 'juice-wrong');
     dom.input.value = '';
-    scheduleIdleCheck();
+    scheduleIdle();
   }
 
   // ---- Row selection (grouped into collapsible sections) -------------
 
   function onRowSelectionChanged() {
-    resetSessionProgress();
-    GameJuice.invalidatePendingTransition();
     const pool = getActivePool();
-    if (pool.length === 0) {
-      state.current = null;
-      paintCurrent(null);
-    } else if (!state.current || !pool.includes(state.current)) {
-      state.current = pickNextKana(pool, state.current);
-      paintCurrent(pool);
-    }
+    if (!state.current || !pool.includes(state.current)) pickNext();
+    paintCurrent();
   }
 
   function buildRowCheckbox(row) {
@@ -372,34 +316,28 @@
 
       const actions = document.createElement('div');
       actions.className = 'row-section-actions';
+      const checkboxes = [];
 
-      const checkboxesInSection = [];
+      const setAll = (checked) => {
+        checkboxes.forEach((cb) => {
+          cb.checked = checked;
+          state.enabledRows[cb.dataset.rowId] = checked;
+        });
+        onRowSelectionChanged();
+        refocusInput();
+      };
 
       const selectAllBtn = document.createElement('button');
       selectAllBtn.type = 'button';
       selectAllBtn.className = 'text-button';
       selectAllBtn.textContent = 'Select all';
-      selectAllBtn.addEventListener('click', () => {
-        checkboxesInSection.forEach((checkbox) => {
-          checkbox.checked = true;
-          state.enabledRows[checkbox.dataset.rowId] = true;
-        });
-        onRowSelectionChanged();
-        refocusInput();
-      });
+      selectAllBtn.addEventListener('click', () => setAll(true));
 
       const clearBtn = document.createElement('button');
       clearBtn.type = 'button';
       clearBtn.className = 'text-button';
       clearBtn.textContent = 'Clear';
-      clearBtn.addEventListener('click', () => {
-        checkboxesInSection.forEach((checkbox) => {
-          checkbox.checked = false;
-          state.enabledRows[checkbox.dataset.rowId] = false;
-        });
-        onRowSelectionChanged();
-        refocusInput();
-      });
+      clearBtn.addEventListener('click', () => setAll(false));
 
       actions.append(selectAllBtn, clearBtn);
       details.appendChild(actions);
@@ -408,7 +346,7 @@
       rowList.className = 'row-list';
       section.rows.forEach((row) => {
         const { label, checkbox } = buildRowCheckbox(row);
-        checkboxesInSection.push(checkbox);
+        checkboxes.push(checkbox);
         rowList.appendChild(label);
       });
       details.appendChild(rowList);
@@ -417,28 +355,12 @@
     });
   }
 
-  // ---- Game Juice toggle ------------------------------------------
-
-  function buildGameJuiceToggle() {
-    const radios = document.querySelectorAll('input[name="game-juice"]');
-    const current = GameJuice.isEnabled() ? 'on' : 'off';
-    radios.forEach((radio) => {
-      radio.checked = radio.value === current;
-      radio.addEventListener('change', () => {
-        if (radio.checked) {
-          GameJuice.setEnabled(radio.value === 'on');
-          refocusInput();
-        }
-      });
-    });
-  }
-
   // ---- Event wiring --------------------------------------------------
 
   function bindEvents() {
     dom.input.addEventListener('input', () => {
-      GameJuice.playInputTick(dom.input);
-      scheduleIdleCheck();
+      pulse(dom.input, 'juice-tick');
+      scheduleIdle();
       if (state.submissionMode !== 'auto' || !state.current) return;
       const val = dom.input.value;
       if (isExactMatch(state.current, val)) {

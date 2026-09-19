@@ -5,14 +5,12 @@
  * version so old caches get cleaned up on activate.
  */
 
-const CACHE_NAME = 'hiragana-trainer-v2';
+const CACHE_NAME = 'hiragana-trainer-v3';
 const APP_SHELL = [
   './',
   './index.html',
   './style.css',
-  './juice.css',
   './kana-data.js',
-  './juice.js',
   './app.js',
   './manifest.json',
   './icon-192.png',

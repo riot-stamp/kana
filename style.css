@@ -218,6 +218,108 @@ button {
   color: var(--ink-soft);
 }
 
+/* ---------- Motion: kana pop / transition / combo assembly ----------
+   Always on; suppressed only by prefers-reduced-motion (see the
+   backstop near the end of this file). Durations live only here —
+   app.js reacts to `animationend` rather than duplicating them. */
+
+.juice-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.juice-ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 42%;
+  height: 42%;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  transform: translate(-50%, -50%) scale(0.4);
+  opacity: 0.5;
+  animation: juice-ripple 340ms ease-out forwards;
+}
+
+@keyframes juice-ripple {
+  to {
+    transform: translate(-50%, -50%) scale(1.7);
+    opacity: 0;
+  }
+}
+
+.kana-part {
+  display: inline-block;
+}
+
+.juice-leave {
+  display: inline-block;
+  animation: juice-leave 150ms cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+}
+
+.juice-leave.juice-sharp {
+  animation-name: juice-leave-sharp;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes juice-leave {
+  0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+  35% { transform: scale(1.08); opacity: 1; filter: brightness(1.08); }
+  100% { transform: scale(0.92) translateY(8px); opacity: 0; }
+}
+
+@keyframes juice-leave-sharp {
+  0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+  30% { transform: scale(1.05); opacity: 1; filter: brightness(1.05); }
+  100% { transform: scale(0.94) translateY(6px); opacity: 0; }
+}
+
+.juice-enter {
+  display: inline-block;
+  animation: juice-enter 180ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes juice-enter {
+  from { opacity: 0; transform: scale(0.92) translateY(-6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.juice-enter.juice-combo .kana-part--small {
+  animation: juice-combo-small 180ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  animation-delay: 60ms;
+  animation-fill-mode: backwards;
+}
+
+@keyframes juice-combo-small {
+  0% { transform: translateY(4px) scale(0.8); opacity: 0.5; }
+  70% { transform: translateY(-1px) scale(1.06); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.juice-idle {
+  animation: juice-idle 3.6s ease-in-out infinite;
+}
+
+@keyframes juice-idle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.965; transform: scale(1.006); }
+}
+
+.juice-wrong {
+  animation: juice-wrong 220ms ease-out;
+}
+
+@keyframes juice-wrong {
+  0% { transform: translateX(0); filter: brightness(1); }
+  25% { transform: translateX(-3px); filter: brightness(0.96); }
+  55% { transform: translateX(3px); }
+  100% { transform: translateX(0); filter: brightness(1); }
+}
+
 /* ---------- Answer input ---------- */
 
 #answer-form {
@@ -252,6 +354,26 @@ button {
 
 #answer-input:disabled {
   opacity: 0.5;
+}
+
+.juice-tick {
+  animation: juice-tick 100ms ease-out;
+}
+
+@keyframes juice-tick {
+  0% { transform: translateY(0); }
+  40% { transform: translateY(-1px); }
+  100% { transform: translateY(0); }
+}
+
+.juice-resolve {
+  animation: juice-resolve 220ms ease-out;
+}
+
+@keyframes juice-resolve {
+  0% { box-shadow: 0 1px 0 0 transparent; }
+  35% { box-shadow: 0 3px 10px -2px var(--accent); }
+  100% { box-shadow: 0 1px 0 0 transparent; }
 }
 
 /* ---------- Feedback ---------- */
@@ -367,6 +489,15 @@ button {
 .kana-row-checkbox:not(:checked) ~ .kana-row-chars {
   color: var(--ink-soft);
   opacity: 0.6;
+}
+
+/* app.js already checks prefers-reduced-motion before adding any class
+   above; this backstops it directly at the CSS layer too. */
+@media (prefers-reduced-motion: reduce) {
+  .juice-leave, .juice-enter, .juice-wrong, .juice-tick, .juice-resolve,
+  .juice-idle, .juice-ripple, .juice-enter.juice-combo .kana-part--small {
+    animation: none !important;
+  }
 }
 
 /* ---------- Responsive tweaks ---------- */
